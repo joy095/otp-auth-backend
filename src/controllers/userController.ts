@@ -2,7 +2,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Request, Response } from "express"; // Types for Express requests and responses
-import crypto from "crypto";
 
 import transporter from "../config/mail";
 import { User } from "../types/user";
@@ -14,15 +13,13 @@ const SALT_ROUNDS = parseInt(process.env.SALT_ROUNDS || "10", 10);
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET as string;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET as string;
 
-// function otpFn(length: number): string {
-//   let otp = "";
-//   for (let i = 0; i < length; i++) {
-//     otp += Math.floor(Math.random() * 10).toString(); // Generates a digit between 0 and 9
-//   }
-//   return otp;
-// }
-
-const generateOTP = (): string => crypto.randomInt(100000, 999999).toString();
+function otpFn(length: number): string {
+  let otp = "";
+  for (let i = 0; i < length; i++) {
+    otp += Math.floor(Math.random() * 10).toString(); // Generates a digit between 0 and 9
+  }
+  return otp;
+}
 
 // Send OTP for Register user
 const sendOTP = async (req: Request, res: Response) => {
@@ -51,8 +48,9 @@ const sendOTP = async (req: Request, res: Response) => {
       }
     }
 
+    const otp = otpFn(6);
+
     // Generate OTP and expiration time
-    const otp = generateOTP();
     const otpExpiration = new Date(
       Date.now() + +process.env.OTP_EXPIRY_MINUTES! * 60000
     ); // Set expiration time
@@ -69,7 +67,9 @@ const sendOTP = async (req: Request, res: Response) => {
       //  SET otp_code = $2, expires_at = $3`,
       // [userId, email, otp, otpExpiration]
 
-      "INSERT INTO otp_codes (user_id, otp_code, expires_at, email) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO UPDATE SET otp_code = $2, expires_at = $3, email = $4",
+      `INSERT INTO otp_codes (user_id, otp_code, expires_at, email) 
+      VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) 
+      DO UPDATE SET otp_code = $2, expires_at = $3, email = $4`,
       [userId, otp, otpExpiration, email]
     );
 
@@ -93,26 +93,57 @@ const verifyOTP = async (req: Request, res: Response) => {
   const { email, otp } = req.body;
 
   try {
-    const result = await pool.query("SELECT * FROM users WHERE email = $1", [
-      email,
-    ]);
-    const user = result.rows[0];
+    // 1. Fetch the user by email
+    const userResult = await pool.query(
+      "SELECT * FROM users WHERE email = $1",
+      [email]
+    );
 
-    if (!user) return res.status(404).json({ message: "User not found." });
-
-    if (user.otp !== otp)
-      return res.status(400).json({ message: "Invalid OTP." });
-
-    if (new Date() > user.expires_at) {
-      return res.status(400).json({ message: "OTP expired." });
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ message: "User not found." });
     }
 
-    // Mark user as verified
-    await pool.query("UPDATE users SET verified = true WHERE email = $1", [
-      email,
+    console.log("User ID:", userResult.rows[0].id);
+
+    const userId = userResult.rows[0].id;
+
+    // 2. Fetch OTP details for the user
+    const otpResult = await pool.query(
+      "SELECT * FROM otp_codes WHERE user_id = $1",
+      [userId]
+    );
+
+    if (otpResult.rows.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "OTP not found. Please request a new one." });
+    }
+
+    const otpRecord = otpResult.rows[0];
+
+    // 3. Check if the OTP matches and is not expired
+    const now = new Date();
+
+    console.log("OTP Record:", otpRecord);
+
+    if (otpRecord.otp_code !== otp) {
+      return res.status(400).json({ message: "Invalid OTP." });
+    }
+    if (now > otpRecord.otp_expiration) {
+      return res
+        .status(400)
+        .json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    // 4. Mark the user as verified
+    await pool.query("UPDATE users SET verified = TRUE WHERE id = $1", [
+      userId,
     ]);
 
-    res.status(200).json({ message: "OTP verified successfully." });
+    // 5. Delete the OTP after successful verification
+    await pool.query("DELETE FROM otp_codes WHERE user_id = $1", [userId]);
+
+    res.status(200).json({ message: "User verified successfully." });
   } catch (error) {
     console.error("Error verifying OTP:", error);
     res.status(500).json({ message: "Error verifying OTP." });
