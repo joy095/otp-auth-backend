@@ -7,6 +7,10 @@ import {
   registerUser,
   sendOTP,
   verifyOTP,
+  getUser,
+  getAllUsers,
+  deleteUser,
+  updateUser,
 } from "../controllers/userController";
 import { authenticateToken } from "../middlewares/authMiddleware";
 
@@ -15,6 +19,14 @@ const router = Router();
 router.post("/send-otp", sendOTP as Application);
 
 router.post("/verify-otp", verifyOTP as Application);
+
+router.get("/", getAllUsers as Application);
+
+router.get("/:id", getUser as Application);
+
+router.delete("/:id", deleteUser as Application);
+
+router.patch("/:id", updateUser as Application);
 
 router.post("/register", registerUser as Application);
 

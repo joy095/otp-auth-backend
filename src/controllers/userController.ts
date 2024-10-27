@@ -314,4 +314,94 @@ const token = async (req: Request, res: Response): Promise<Response> => {
     return res.sendStatus(500);
   }
 };
-export { registerUser, loginUser, logOutUser, token, sendOTP, verifyOTP };
+
+// Route to get all users
+const getAllUsers = async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query("SELECT * FROM users"); // Query the database
+    res.status(200).json(result.rows); // Send query results as JSON
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// Route to get a specific user by ID
+const getUser = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
+
+    if (result.rows.length > 0) {
+      res.status(200).json(result.rows[0]); // Return the user if found
+    } else {
+      res.status(404).json({ message: "User not found" });
+    }
+  } catch (error) {
+    console.error("Error fetching user:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// DELETE User Route
+const deleteUser = async (req: Request, res: Response) => {
+  const { id } = req.params; // Get user ID from route params
+
+  try {
+    const result = await pool.query("DELETE FROM users WHERE id = $1", [id]);
+
+    if (result.rowCount && result.rowCount > 0) {
+      res
+        .status(200)
+        .json({ message: `User with ID ${id} deleted successfully.` });
+    } else {
+      res.status(404).json({ message: `User with ID ${id} not found.` });
+    }
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// PUT Route to Update User by ID
+const updateUser = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ message: "Password is required." });
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const result = await pool.query(
+      "UPDATE users SET password = $1 WHERE id = $2 RETURNING *",
+      [hashedPassword, id]
+    );
+
+    if (result.rowCount && result.rowCount > 0) {
+      res.status(200).json({ message: "Password updated successfully." });
+    } else {
+      res.status(404).json({ message: "User not found." });
+    }
+  } catch (error) {
+    console.error("Error updating password:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export {
+  registerUser,
+  loginUser,
+  logOutUser,
+  token,
+  sendOTP,
+  verifyOTP,
+  getAllUsers,
+  getUser,
+  deleteUser,
+  updateUser,
+};

@@ -9,7 +9,7 @@ import userRoutes from "./routes/userRoute";
 import { corsOptions } from "./config/cors";
 
 const app = express();
-app.use(cors(corsOptions));
+app.use(cors(corsOptions as cors.CorsOptions));
 app.use(express.json());
 app.use(cookieParser()); // To parse cookies
 
